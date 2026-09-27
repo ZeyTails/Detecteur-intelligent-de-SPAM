@@ -1,0 +1,9 @@
+subject,text,y,from,to
+Sprint planning update,"Hi team, sprint planning starts at 9am tomorrow in room B. Please bring your backlog updates.",0,manager@company.com,dev@company.com
+Invoice payment reminder,"Hello, this is a reminder that invoice INV-778 is due next week. Let us know if you need a copy.",0,billing@vendor.com,finance@company.com
+Claim your reward now,"Congratulations winner! Claim your free reward now at http://claim-now-fast.example.com",1,promo@random-lottery.com,user@company.com
+Security alert verify account,"Your account is suspended. Verify now with your password here: http://security-check-urgent.example.com",1,support@fake-bank.com,user@company.com
+Weekly report draft,"Please review the weekly report draft and share comments before Friday.",0,lead@company.com,analyst@company.com
+Crypto giveaway,"Limited-time airdrop, connect your wallet and receive tokens instantly.",1,airdrop@crypto-bonus.com,user@company.com
+Lunch invitation,"We are organizing a team lunch on Wednesday at noon, let me know if you can join.",0,hr@company.com,staff@company.com
+Final warning transfer required,"Final notice: transfer fee required today to unlock your 2 million dollar prize.",1,claims@prize-center.com,user@company.com

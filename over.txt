@@ -1,0 +1,831 @@
+\documentclass[12pt,a4paper]{report}
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage[french]{babel}
+\usepackage{lmodern}
+\usepackage[a4paper,margin=2.5cm]{geometry}
+\usepackage{setspace}
+\usepackage{amsmath,amssymb}
+\usepackage{booktabs}
+\usepackage{longtable}
+\usepackage{xcolor}
+\usepackage{listings}
+\usepackage{float}
+\usepackage{hyperref}
+\usepackage{fancyhdr}
+\usepackage{titlesec}
+\usepackage{microtype}
+\definecolor{codebackground}{RGB}{247,247,247}
+\definecolor{codekeyword}{RGB}{0,70,140}
+\definecolor{codecomment}{RGB}{80,110,80}
+\definecolor{codestring}{RGB}{150,60,20}
+\lstset{
+ backgroundcolor=\color{codebackground},
+ basicstyle=\ttfamily\small,
+ keywordstyle=\color{codekeyword}\bfseries,
+ commentstyle=\color{codecomment},
+ stringstyle=\color{codestring},
+ frame=single,breaklines=true,showstringspaces=false,columns=fullflexible
+}
+\hypersetup{colorlinks=true,linkcolor=blue!60!black,urlcolor=blue!60!black}
+\onehalfspacing
+\setlength{\parindent}{0pt}
+\setlength{\parskip}{6pt}
+\setlength{\headheight}{14pt}
+\pagestyle{fancy}
+\fancyhf{}
+\lhead{Détecteur de SPAM}
+\rhead{Rapport de recherche}
+\cfoot{\thepage}
+\titleformat{\chapter}[display]{\bfseries\Huge}{\chaptername\ \thechapter}{12pt}{\Huge}
+\newcommand{\code}[1]{\texttt{#1}}
+\newcommand{\ham}{\textit{ham}}
+\newcommand{\spam}{\textit{spam}}
+
+\begin{document}
+
+\begin{titlepage}
+\centering
+\vspace*{1.5cm}
+{\Large Projet de traitement automatique du langage\par}
+\vspace{0.3cm}
+{\Large Projet universitaire\par}
+\vspace{1.2cm}
+{\Huge\bfseries Détection automatique des e-mails indésirables\par}
+\vspace{0.7cm}
+{\Large Rapport de recherche et de mise en œuvre\par}
+\vspace{2cm}
+\rule{0.8\textwidth}{0.5pt}\par
+\vspace{0.5cm}
+{\large Données, apprentissage supervisé, intégration Mailpit et évaluation\par}
+\vfill
+\begin{tabular}{rl}
+Projet : & Détecteur de SPAM \\
+Contexte : & Projet universitaire \\
+Langage : & Python \\
+Modèle : & TF-IDF + Naive Bayes \\
+Date de présentation : & 18 février 2026
+\end{tabular}
+\vfill
+{\large Rapport rédigé en \LaTeX\par}
+\end{titlepage}
+
+\pagenumbering{roman}
+\chapter*{Résumé}
+\addcontentsline{toc}{chapter}{Résumé}
+
+Ce rapport décrit un système local de détection d'e-mails indésirables. Le
+projet prend des messages étiquetés, nettoie leur contenu, construit une
+représentation TF-IDF et entraîne des classifieurs Naive Bayes. Le meilleur
+artefact est enregistré avec le vectoriseur, le classifieur et le seuil de
+décision. Il est ensuite chargé par une application qui observe les messages
+reçus dans Mailpit.
+
+Ce travail a été réalisé dans le cadre d'un projet universitaire. Il associe
+une étude des méthodes de classification de textes à une mise en œuvre
+logicielle reproductible, afin de relier les notions théoriques aux essais
+réalisés sur des messages contrôlés.
+
+Le projet comporte aussi une évaluation reproductible. Les messages de test
+reçoivent un identifiant de groupe, appelé \code{run\_id}, ou un identifiant
+individuel, appelé \code{message\_id}. Le rapport peut donc analyser un seul
+message ou calculer une matrice de confusion sur un ensemble. Les tags affichés
+dans Mailpit sont volontairement courts, mais le journal conserve la
+probabilité de spam, le seuil, la confiance et les mots influents.
+
+Les essais montrent que la chaîne logicielle fonctionne : un message normal,
+un spam évident et un groupe de quatre messages sont correctement traités. Un
+message normal au vocabulaire proche de celui d'un spam a cependant été classé
+spam avec une probabilité de 98,99\,\%. Cette erreur montre que la robustesse
+du système dépend autant des données que de l'algorithme.
+
+\textbf{Mots-clés :} spam, ham, TF-IDF, Naive Bayes, précision, rappel, F1,
+Mailpit, matrice de confusion, audit.
+
+\tableofcontents
+\listoftables
+\clearpage
+\pagenumbering{arabic}
+
+\chapter{Introduction}
+
+\section{Problématique}
+
+Les e-mails indésirables représentent un problème de sécurité, de productivité
+et de confiance. Ils peuvent être publicitaires, frauduleux ou destinés à
+récupérer des informations confidentielles. Un filtre automatique doit
+distinguer un message légitime d'un message indésirable à partir de signaux
+textuels souvent imparfaits.
+
+Le projet formule cette tâche comme une classification binaire. \ham signifie
+qu'un message est normal ; \spam signifie qu'il doit être considéré comme
+indésirable. Le système produit une classe et une probabilité estimée. Cette
+probabilité sert ensuite à appliquer un seuil et à mesurer la confiance.
+
+\section{Question de recherche}
+
+La question centrale est la suivante : peut-on construire une chaîne locale,
+reproductible et observable qui entraîne un modèle de spam, l'utilise sur de
+nouveaux messages et explique ses erreurs au moyen de statistiques ?
+
+Cette question contient une dimension algorithmique et une dimension logicielle.
+Il faut sélectionner une représentation du langage et un classifieur, mais aussi
+organiser les fichiers, gérer les messages, conserver l'état et produire des
+rapports fiables.
+
+\section{Objectifs}
+
+Les objectifs sont :
+
+\begin{itemize}
+\item fusionner deux corpus d'e-mails ;
+\item nettoyer les en-têtes, les URLs, le HTML et les adresses ;
+\item transformer les textes en vecteurs TF-IDF ;
+\item comparer deux variantes de Naive Bayes ;
+\item sélectionner alpha et le seuil avec $F_2$ ;
+\item intégrer le modèle à Mailpit ;
+\item évaluer un message ou un groupe de messages ;
+\item conserver des journaux destinés au diagnostic.
+\end{itemize}
+
+\section{Plan}
+
+Le rapport présente d'abord l'architecture, puis les données et le
+prétraitement. Il explique ensuite TF-IDF, Naive Bayes, la sélection du seuil
+et les métriques. Une partie est consacrée à Mailpit et aux scénarios réels
+exécutés. Les limites, les questions de sécurité et les améliorations
+scientifiques terminent l'étude.
+
+\clearpage
+\chapter{Architecture du projet}
+
+\section{Chaîne globale}
+
+La chaîne d'apprentissage s'exécute avec \code{Spam.py}. Elle produit le fichier
+\code{models/spam\_tfidf\_nb.joblib}. La chaîne de démonstration se trouve dans
+\code{Mailpit}. Elle comporte trois scripts : \code{app.py}, \code{send.py} et
+\code{evaluate.py}.
+
+\begin{verbatim}
+Datasets CSV
+    |
+    v
+Spam.py -> nettoyage -> TF-IDF -> Naive Bayes
+    |
+    v
+models/spam_tfidf_nb.joblib
+    |
+    v
+SMTP Mailpit -> app.py -> tags et journaux
+    |
+    v
+evaluate.py -> metriques
+\end{verbatim}
+
+\section{Arborescence}
+
+\begin{verbatim}
+Détecteur de SPAM/
+  README.md
+  requirements.txt
+  Spam.py
+  data/raw/
+  data/processed/
+  models/spam_tfidf_nb.joblib
+  Mailpit/app.py
+  Mailpit/send.py
+  Mailpit/evaluate.py
+  Mailpit/data/
+  Mailpit/runtime/
+  Mailpit/bin/mailpit
+  Mailpit/bin/mailpit.exe
+\end{verbatim}
+
+Le dossier \code{data/raw} conserve les sources originales. Le dossier
+\code{data/processed} contient une exportation après préparation. Le dossier
+\code{models} contient le seul modèle de référence. Le dossier
+\code{Mailpit/runtime} contient des sorties et non du code source.
+
+\section{Responsabilité des composants}
+
+\begin{longtable}{p{0.30\textwidth}p{0.60\textwidth}}
+\toprule
+\textbf{Composant} & \textbf{Rôle} \\
+\midrule
+\endhead
+\code{Spam.py} & Entraînement, réglage et sauvegarde. \\
+\code{app.py} & Surveillance, prédiction, tags et audit. \\
+\code{send.py} & Messages modèles, messages manuels et CSV. \\
+\code{evaluate.py} & Rapports et métriques. \\
+\code{models} & Artefact utilisé en production locale. \\
+\code{runtime} & Etat, compteurs et historique. \\
+\bottomrule
+\end{longtable}
+
+\section{Interfaces}
+
+Le protocole SMTP de Mailpit écoute normalement sur le port 1025. L'API et
+l'interface web utilisent le port 8025. Le navigateur montre les messages,
+mais la classification Python communique avec l'API HTTP. Cette distinction
+permet de tester l'application même sans reproduire toutes les actions
+manuelles de l'interface.
+
+\clearpage
+\chapter{Données et corpus}
+
+\section{Sources d'apprentissage}
+
+Le fichier \code{data/raw/spam\_assassin.csv} contient 5\,796 messages. Le
+fichier \code{data/raw/spam\_ham\_dataset.csv} contient 5\,171 messages. Le
+premier utilise \code{target} comme étiquette, le second utilise
+\code{label\_num}. Le script renomme ces colonnes en \code{y}.
+
+\begin{table}[H]
+\centering
+\caption{Schéma commun après harmonisation}
+\begin{tabular}{lll}
+\toprule
+Champ & Type & Signification \\
+\midrule
+\code{text} & chaîne & contenu de l'e-mail \\
+\code{y} & entier & 0 pour ham, 1 pour spam \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+La première source compte 3\,900 messages normaux et 1\,896 spams. La seconde
+compte 3\,672 messages normaux et 1\,499 spams. Le corpus total compte donc
+10\,967 lignes avant le filtrage des textes vides. La classe normale est
+majoritaire.
+
+\section{Données de démonstration}
+
+Le dossier \code{Mailpit/data} contient des données plus petites. Le fichier
+\code{demo\_mails.csv} contient huit messages équilibrés, quatre normaux et
+quatre spams. Le fichier \code{spam\_dataset.csv} contient 1\,000 lignes,
+réparties à parts égales dans la version observée.
+
+Ces petits fichiers ne servent pas à remplacer le corpus d'apprentissage.
+Ils servent à vérifier rapidement l'envoi, le regroupement, les tags et les
+statistiques.
+
+\section{Qualité des étiquettes}
+
+Une étiquette erronée est apprise comme une règle. Si un message normal est
+marqué spam, le classifieur reçoit un signal contradictoire. La qualité du
+jeu de données doit donc être contrôlée avant d'optimiser l'algorithme.
+
+Il faut également rechercher les doublons et les variantes d'un même message.
+La présence de messages presque identiques dans l'entraînement et le test peut
+donner un score artificiellement élevé.
+
+\section{Données sensibles}
+
+Les e-mails peuvent contenir des noms, adresses et informations commerciales.
+Les datasets doivent être anonymisés lorsque nécessaire. Mailpit limite le
+risque d'envoi vers l'extérieur, mais les fichiers locaux et le journal
+d'audit restent sensibles.
+
+\clearpage
+\chapter{Nettoyage et traitement linguistique}
+
+\section{Nettoyage}
+
+La fonction de nettoyage transforme le texte en minuscules. Elle supprime
+certaines lignes d'en-tête, les balises HTML, les URLs et les adresses
+électroniques. Les caractères non alphabétiques sont retirés et les espaces
+sont normalisés.
+
+Cette étape rend le vocabulaire plus stable. Elle retire cependant des signaux
+potentiellement utiles : domaine d'une URL, présence d'une pièce jointe,
+adresse de l'expéditeur ou informations de routage. Le choix est donc un
+compromis entre réduction du bruit et perte d'information.
+
+\section{Tokenisation}
+
+La tokenisation transforme la chaîne en liste de mots en séparant sur les
+espaces. Elle est simple et rapide. Elle fonctionne bien avec le nettoyage
+préalable, mais elle traite imparfaitement les contractions, les langues
+multiples et certaines formes particulières.
+
+\section{Lemmatisation}
+
+Le script utilise NLTK et WordNet pour ramener certaines formes vers une base
+lexicale. Les ressources \code{punkt}, \code{wordnet} et \code{omw-1.4} sont
+téléchargées si nécessaire.
+
+La lemmatisation réduit parfois la fragmentation du vocabulaire. Elle ne donne
+pas une compréhension sémantique du message : elle modifie seulement la forme
+des tokens.
+
+\section{Cohérence du pipeline}
+
+Une limite importante est présente dans la version étudiée. \code{Spam.py}
+lemmatise pendant l'entraînement, tandis que \code{app.py} ne reproduit pas
+exactement cette lemmatisation à l'inférence. Le modèle reste opérationnel,
+mais l'entrée d'entraînement et l'entrée de production ne sont pas parfaitement
+homogènes.
+
+La correction recommandée consiste à partager une même fonction de
+prétraitement ou à sauvegarder un pipeline complet. Cette amélioration doit
+être réalisée avant une comparaison définitive de modèles.
+
+\section{Export traité}
+
+Le fichier \code{data/processed/spam\_processed.csv} contient 10\,460 lignes
+après le nettoyage et conserve les colonnes \code{text}, \code{y},
+\code{clean}, \code{tokens}, \code{lemmatized} et \code{norm\_text}. Cet export
+sert à l'audit et à la compréhension des transformations.
+
+\clearpage
+\chapter{TF-IDF et modèle probabiliste}
+
+\section{Représentation TF-IDF}
+
+Un classifieur de texte a besoin de nombres. TF-IDF attribue un poids aux
+termes selon leur présence dans un document et leur rareté dans le corpus :
+
+\[
+\operatorname{tfidf}(t,d)=\operatorname{tf}(t,d)
+\log\left(\frac{1+N}{1+\operatorname{df}(t)}\right)+1.
+\]
+
+Ici, $N$ est le nombre de documents et $\operatorname{df}(t)$ le nombre de
+documents contenant le terme. Un terme fréquent partout est peu discriminant ;
+un terme présent surtout dans une classe peut être utile.
+
+\section{N-grammes}
+
+Le vectoriseur utilise \code{ngram\_range=(1,2)}. Il prend donc les mots
+isolés et les paires de mots. Les bigrammes permettent de représenter des
+expressions comme \code{claim now}, qui peuvent être plus informatives que
+\code{claim} ou \code{now} séparément.
+
+Les paramètres \code{min\_df=2} et \code{max\_df=0.95} filtrent les termes trop
+rares ou trop fréquents. \code{sublinear\_tf=True} limite l'effet des
+répétitions.
+
+Le modèle actuel possède environ 153\,507 caractéristiques. La matrice est
+creuse : chaque message utilise seulement une petite partie du vocabulaire.
+
+\section{Naive Bayes}
+
+Naive Bayes estime une classe à partir des probabilités des caractéristiques :
+
+\[
+P(c\mid x_1,\ldots,x_n)\propto P(c)\prod_i P(x_i\mid c).
+\]
+
+L'hypothèse d'indépendance est simplificatrice, mais elle est souvent efficace
+en classification de textes. Le paramètre alpha effectue un lissage et évite
+les probabilités nulles.
+
+\section{ComplementNB}
+
+Le projet compare \code{MultinomialNB} et \code{ComplementNB}. ComplementNB
+peut être intéressant lorsque les classes sont déséquilibrées. Les valeurs
+d'alpha testées sont :
+
+\[
+\alpha \in \{0.1,0.3,0.5,1.0,2.0\}.
+\]
+
+Le modèle choisi dans l'artefact observé est ComplementNB avec alpha égal à
+0,1.
+
+\section{Interprétation}
+
+Les log-probabilités du classifieur permettent d'estimer les termes qui ont
+contribué à la décision. Ces mots influents sont utiles pour le diagnostic,
+mais ils ne constituent pas une explication causale de l'intention humaine.
+
+\clearpage
+\chapter{Entraînement et choix du seuil}
+
+\section{Séparation}
+
+Une graine aléatoire égale à 42 est utilisée. Une première séparation réserve
+25\,\% des données au test. Une seconde réserve 20\,\% du reste à la validation.
+Les proportions approximatives sont 60\,\% entraînement, 15\,\% validation et
+25\,\% test.
+
+La séparation est stratifiée afin de conserver la proportion de ham et de spam.
+Le vectoriseur TF-IDF est ajusté uniquement sur l'entraînement. La validation
+et le test sont transformés avec le vocabulaire déjà appris.
+
+\section{Recherche d'hyperparamètres}
+
+Pour chaque classifieur et chaque alpha, le script calcule les probabilités sur
+la validation. Il teste des seuils compris entre 0,20 et 0,80 par pas de 0,05.
+Le meilleur couple est choisi avec $F_2$.
+
+\[
+F_{\beta}=(1+\beta^2)\frac{PR}{\beta^2P+R},
+\qquad \beta=2.
+\]
+
+Le choix de $\beta=2$ donne deux fois plus d'importance au rappel qu'à la
+précision dans l'équilibre recherché. L'objectif est de manquer le moins
+possible de spams, tout en observant les faux positifs.
+
+\section{Entraînement final}
+
+Après la sélection, le modèle est réentraîné sur entraînement plus validation.
+Il est ensuite évalué sur le test. Le fichier joblib conserve le vectoriseur,
+le classifieur, le seuil, le nom du modèle, alpha et la métrique.
+
+La configuration observée est :
+
+\begin{table}[H]
+\centering
+\caption{Paramètres du modèle enregistré}
+\begin{tabular}{ll}
+\toprule
+Classifieur & ComplementNB \\
+Alpha & 0,1 \\
+Seuil spam & 0,35 \\
+Métrique & $F_2$ de validation \\
+N-grammes & 1 à 2 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\section{Pourquoi un seuil différent de 0,50 ?}
+
+Une probabilité n'est pas obligée d'être convertie en décision à 0,50. Un
+seuil plus bas rend la détection plus sensible, mais augmente potentiellement
+les faux positifs. Un seuil plus haut réduit certaines alertes, mais peut
+laisser passer des spams. Le choix doit correspondre au coût métier des
+erreurs.
+
+\clearpage
+\chapter{Métriques et rapports}
+
+\section{Matrice de confusion}
+
+La convention du projet est :
+
+\[
+\begin{array}{c|cc}
+ & \text{prédit normal} & \text{prédit spam}\\
+\hline
+\text{réel normal} & TN & FP\\
+\text{réel spam} & FN & TP
+\end{array}
+\]
+
+$TN$ et $TP$ sont les bonnes décisions. $FP$ est un faux positif : un message
+normal bloqué. $FN$ est un faux négatif : un spam manqué.
+
+\section{Formules principales}
+
+\[
+\operatorname{Accuracy}=\frac{TP+TN}{TP+TN+FP+FN}
+\]
+
+\[
+\operatorname{Précision}=\frac{TP}{TP+FP}
+\qquad
+\operatorname{Rappel}=\frac{TP}{TP+FN}
+\]
+
+\[
+F_1=2\frac{\operatorname{Précision}\times\operatorname{Rappel}}
+{\operatorname{Précision}+\operatorname{Rappel}}
+\]
+
+L'accuracy décrit la proportion globale de décisions correctes. La précision
+décrit la fiabilité des alertes spam. Le rappel décrit la capacité à retrouver
+les spams. Le F1 équilibre précision et rappel.
+
+\section{Analyse individuelle}
+
+Pour un message :
+
+\begin{lstlisting}
+python evaluate.py --message-id MESSAGE_ID
+\end{lstlisting}
+
+Le rapport affiche l'attendu, le prédit, la vérification, la probabilité spam,
+le seuil, la confiance et les mots influents.
+
+\section{Analyse d'un run}
+
+Pour un ensemble :
+
+\begin{lstlisting}
+python evaluate.py --run-id RUN_ID --details
+\end{lstlisting}
+
+Le rapport affiche la matrice, l'accuracy, les scores de chaque classe et le
+support. L'option \code{--details} ajoute une ligne par message. Sans cette
+option, le rapport reste synthétique.
+
+\section{Journal de secours}
+
+L'évaluation lit les tags Mailpit et utilise aussi
+\code{runtime/predictions\_log.jsonl}. Ce secours évite de marquer un message
+comme ignoré lorsque l'API renvoie le message mais pas toutes les informations
+de tag.
+
+\clearpage
+\chapter{Intégration Mailpit}
+
+\section{Envoi des messages}
+
+\code{send.py} possède trois modes. \code{templates} envoie des exemples
+normaux et spam. \code{message} envoie un message personnalisé.
+\code{csv} rejoue les lignes d'un fichier avec un intervalle.
+
+Chaque message peut recevoir \code{X-Run-Id}. Lorsque l'étiquette attendue est
+connue, \code{X-Expected-Label} est ajoutée. Ces métadonnées sont utilisées
+pour l'évaluation mais ne servent pas à modifier la décision du modèle.
+
+\section{Surveillance}
+
+\code{app.py} interroge l'API Mailpit. Il récupère le contenu texte ou
+convertit le HTML. Il appelle le modèle, calcule la probabilité et ajoute les
+tags :
+
+\begin{itemize}
+\item \code{resultat:normal} ou \code{resultat:spam} ;
+\item \code{confiance:faible}, \code{confiance:moyenne} ou
+      \code{confiance:forte} ;
+\item \code{verification:correcte} ou \code{verification:incorrecte}.
+\end{itemize}
+
+Les tags ont été simplifiés pour rendre l'interface compréhensible. Les
+informations techniques restent dans le journal.
+
+\section{Etat et audit}
+
+\code{state.json} contient les identifiants déjà traités. Il évite de retraiter
+les mêmes messages à chaque boucle. \code{metrics.json} contient les compteurs
+cumulés. \code{predictions\_log.jsonl} contient une ligne par décision avec
+le message, le run, l'étiquette attendue, la classe, la probabilité, le seuil,
+la confiance et les termes influents.
+
+\section{Environnement de démonstration}
+
+Mailpit sépare la démonstration du vrai courrier. Le serveur SMTP local reçoit
+les messages sans les délivrer à un destinataire extérieur. Cette isolation
+est utile pour l'enseignement, les scénarios contrôlés et le diagnostic des
+erreurs.
+
+\clearpage
+\chapter{Scénarios et résultats}
+
+\section{Protocole}
+
+Quatre scénarios ont été exécutés : un ham évident, un spam évident, un ham
+ambigu et un groupe de quatre messages. Chaque message possède une étiquette
+attendue indépendante de la prédiction.
+
+\section{Cas normal}
+
+Le message \code{Team meeting update} était attendu comme ham. Le modèle a
+produit ham avec une probabilité spam de 0,61\,\%. La confiance était forte.
+La matrice du run est $[[1,0],[0,0]]$ et le résultat est correct.
+
+Cette accuracy de 100\,\% ne mesure cependant pas le comportement sur la classe
+spam, car le run ne contient qu'un seul ham.
+
+\section{Cas spam}
+
+Le message annonçant un gain gratuit était attendu comme spam. Le modèle a
+produit spam avec une probabilité d'environ 99,80\,\%. Les termes influents
+étaient \code{won free}, \code{time offer} et \code{here now}. La matrice est
+$[[0,0],[0,1]]$.
+
+\section{Cas ambigu}
+
+Le message parlant de compte, de confirmation et de site web était attendu
+comme ham. Le modèle a produit spam avec une probabilité de 98,99\,\%. Les
+termes influents étaient \code{website to}, \code{our service} et
+\code{confirm your}. La matrice est $[[0,1],[0,0]]$ : c'est un faux positif.
+
+Cet exemple est important. Le modèle est très sûr de sa décision, donc un petit
+changement du seuil ne suffira probablement pas. Il faut enrichir les exemples
+ham similaires ou ajouter des caractéristiques de contexte.
+
+\section{Run de quatre messages}
+
+Le run groupé contenait deux ham et deux spam. La matrice obtenue est :
+
+\[
+\begin{pmatrix}2&0\\0&2\end{pmatrix}.
+\]
+
+Les quatre messages sont évalués et aucun n'est ignoré. Le regroupement par
+\code{run\_id} fonctionne donc correctement.
+
+\section{Synthèse}
+
+Sur les sept messages de ces scénarios, six sont corrects et un est un faux
+positif. La matrice combinée est :
+
+\[
+\begin{pmatrix}3&1\\0&3\end{pmatrix}.
+\]
+
+L'accuracy vaut 85,7\,\%. La précision spam vaut 75\,\%, le rappel spam
+100\,\% et le F1 spam 85,7\,\%. Le système détecte donc bien les exemples spam
+testés, mais il déclenche parfois à tort sur des messages normaux.
+
+\clearpage
+\chapter{Discussion, sécurité et limites}
+
+\section{Ce qui fonctionne}
+
+La chaîne complète fonctionne techniquement : envoi SMTP, réception Mailpit,
+lecture API, chargement du modèle, prédiction, tags, journalisation et rapport.
+L'arborescence sépare correctement les sources, le modèle, les scripts et les
+sorties.
+
+Le rapport individuel est maintenant technique : il affiche la probabilité,
+le seuil, la confiance et les mots influents. Le rapport de run sépare les
+statistiques globales des détails par message.
+
+\section{Généralisation}
+
+Les scénarios sont utiles pour l'intégration mais trop petits pour représenter
+tous les e-mails. Il faut conserver un test indépendant plus large et éviter
+de modifier le modèle en regardant directement ses résultats de test.
+
+La distribution déséquilibrée du corpus rend l'accuracy insuffisante. Le
+rappel spam et les faux positifs doivent être suivis en priorité.
+
+\section{Confidentialité}
+
+Les journaux peuvent contenir des identifiants et des sujets. Dans un contexte
+réel, il faudrait anonymiser les données, limiter la rétention et contrôler
+l'accès au dossier. Mailpit ne doit pas être exposé publiquement sans
+authentification et sans protection.
+
+\section{Décision humaine}
+
+Un filtre ne devrait pas supprimer automatiquement un message à partir d'une
+seule probabilité. Une zone de revue humaine est préférable. Le projet actuel
+fournit une confiance et une possibilité d'audit, mais une politique de
+production devrait préciser les actions associées à chaque niveau.
+
+\section{Prétraitement}
+
+La différence entre la lemmatisation à l'entraînement et le nettoyage à
+l'inférence doit être corrigée. Cette incohérence peut expliquer une partie
+des erreurs sur des formes morphologiques non vues de la même façon.
+
+\clearpage
+\chapter{Améliorations et conclusion}
+
+\section{Améliorations prioritaires}
+
+La première amélioration est d'unifier le prétraitement. La seconde consiste à
+ajouter des messages ham légitimes contenant le vocabulaire responsable du faux
+positif : confirmation, compte, service et site web. La troisième consiste à
+évaluer plusieurs modèles avec le même découpage.
+
+Une étude plus complète pourrait comparer régression logistique, LinearSVC
+calibré et représentations de phrases. Elle pourrait aussi intégrer des
+métadonnées contrôlées : domaine, présence de lien, authentification ou type
+de pièce jointe.
+
+\section{Calibration}
+
+Une valeur de 0,99 n'est pas forcément une probabilité parfaitement calibrée.
+Une calibration isotone ou sigmoïde pourrait vérifier si les probabilités
+correspondent réellement aux fréquences observées. Cette étape est utile si
+l'utilisateur interprète la probabilité comme un niveau de risque.
+
+\section{Suivi du modèle}
+
+Le spam évolue. Il faut enregistrer la version du modèle, la date, le corpus
+et les métriques. Les erreurs devraient être relues, corrigées puis réinjectées
+dans un nouveau cycle d'entraînement. Le journal d'audit fournit une base pour
+ce suivi.
+
+\section{Conclusion}
+
+Le projet constitue une base fonctionnelle et pédagogique de classification de
+spam. Il montre comment passer d'un corpus à un modèle sauvegardé, puis d'un
+modèle à une démonstration observable dans Mailpit. Il montre aussi qu'un bon
+résultat sur des cas évidents ne garantit pas une bonne compréhension du
+contexte.
+
+La conclusion expérimentale est nuancée : l'intégration est opérationnelle,
+le regroupement par run fonctionne et les statistiques sont disponibles, mais
+un faux positif fortement confiant subsiste. Le travail futur doit améliorer
+les données et la cohérence du prétraitement avant une utilisation de
+production.
+
+\clearpage
+\appendix
+\chapter{Lexique}
+
+\begin{longtable}{p{0.25\textwidth}p{0.65\textwidth}}
+\toprule
+\textbf{Terme} & \textbf{Définition} \\
+\midrule
+\endhead
+Spam & E-mail indésirable ou frauduleux. \\
+Ham & E-mail normal et légitime. \\
+Classification binaire & Décision entre deux classes. \\
+Apprentissage supervisé & Apprentissage sur des exemples étiquetés. \\
+Dataset & Ensemble de données. \\
+Label & Classe attendue d'un exemple. \\
+Feature & Variable fournie au modèle. \\
+Token & Unité produite par la tokenisation. \\
+Lemmatisation & Réduction vers une forme lexicale. \\
+N-gramme & Suite contiguë de $n$ tokens. \\
+TF-IDF & Poids combinant fréquence locale et rareté globale. \\
+Matrice creuse & Matrice contenant surtout des zéros. \\
+Naive Bayes & Classifieur probabiliste. \\
+ComplementNB & Variante de Naive Bayes pour les textes. \\
+Alpha & Paramètre de lissage. \\
+Seuil & Probabilité utilisée pour décider spam. \\
+Hyperparamètre & Paramètre réglé avant l'utilisation finale. \\
+Entraînement & Apprentissage sur un sous-ensemble. \\
+Validation & Réglage sur un sous-ensemble séparé. \\
+Test & Evaluation finale sur des données gardées à part. \\
+Fuite de données & Utilisation involontaire d'informations du test. \\
+Stratification & Conservation des proportions de classes. \\
+TP & Spam correctement détecté. \\
+TN & Ham correctement reconnu. \\
+FP & Ham classé spam. \\
+FN & Spam classé ham. \\
+Précision & Fiabilité des alertes spam. \\
+Rappel & Part des spams retrouvés. \\
+F1 & Equilibre entre précision et rappel. \\
+Accuracy & Proportion totale de bonnes décisions. \\
+Artefact & Fichier sauvegardé contenant le modèle. \\
+SMTP & Protocole d'envoi d'e-mails. \\
+API & Interface entre programmes. \\
+Watcher & Programme qui surveille les messages. \\
+Tag & Etiquette ajoutée à un message. \\
+Run ID & Identifiant commun à plusieurs messages. \\
+Message ID & Identifiant d'un message. \\
+Audit trail & Historique détaillé des décisions. \\
+\bottomrule
+\end{longtable}
+
+\clearpage
+\chapter{Commandes et bibliographie}
+
+\section{Commandes}
+
+\begin{lstlisting}
+# installation et entrainement
+python -m pip install -r requirements.txt
+python Spam.py
+
+# Mailpit
+cd Mailpit
+./bin/mailpit
+python app.py --reset-state
+
+# tests et rapports
+python send.py templates --kind both --count 2 --interval 1
+python evaluate.py --run-id RUN_ID --details
+python evaluate.py --message-id MESSAGE_ID
+\end{lstlisting}
+
+\section{Références}
+
+\begin{thebibliography}{9}
+\bibitem{manning}
+C. D. Manning, P. Raghavan et H. Schütze,
+\textit{Introduction to Information Retrieval}, Cambridge University Press,
+2008.
+
+\bibitem{salton}
+G. Salton et C. Buckley,
+\og Term-weighting approaches in automatic text retrieval \fg{},
+\textit{Information Processing \& Management}, vol. 24, 1988.
+
+\bibitem{mccallum}
+A. McCallum et K. Nigam,
+\og A comparison of event models for Naive Bayes text classification \fg{},
+AAAI Workshop on Learning for Text Categorization, 1998.
+
+\bibitem{rennie}
+J. D. M. Rennie, L. Shih, J. Teevan et D. R. Karger,
+\og Tackling the poor assumptions of Naive Bayes text classifiers \fg{},
+Proceedings of ICML, 2003.
+
+\bibitem{sklearn}
+Scikit-learn Developers,
+\textit{Documentation scikit-learn},
+\url{https://scikit-learn.org/stable/}.
+
+\bibitem{nltk}
+NLTK Project,
+\textit{Natural Language Toolkit Documentation},
+\url{https://www.nltk.org/}.
+
+\bibitem{mailpit}
+Mailpit Project,
+\textit{Documentation de Mailpit},
+\url{https://mailpit.axllent.org/}.
+\end{thebibliography}
+
+\end{document}

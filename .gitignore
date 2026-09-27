@@ -1,0 +1,20 @@
+# Environnement Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+env/
+
+# Les datasets bruts sont conservés dans le dépôt pour permettre aux
+# utilisateurs de réentraîner le modèle.
+# Le fichier traité ci-dessous reste exclu car il est généré automatiquement.
+data/processed/*.csv
+
+# Sorties d'exécution de Mailpit et du détecteur
+Mailpit/runtime/*
+!Mailpit/runtime/.gitkeep
+
+# Fichiers temporaires et journaux locaux
+*.log
+*.tmp
+.DS_Store
